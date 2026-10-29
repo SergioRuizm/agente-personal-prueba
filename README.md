@@ -2,7 +2,7 @@
 
 Asistente personal que se ejecuta en Windows y se usa desde el navegador. Puede guardar tareas, apuntes y tarjetas; leer documentos; revisar código; y editar fotos guardando copias.
 
-> **Estado:** proyecto en pruebas. Aún no hay una publicación oficial en GitHub. Este README describe la versión web de `agente_web.py` y el ejecutable creado con `crear_exe.bat`; no describe una aplicación de escritorio independiente.
+> **Estado:** proyecto en pruebas, publicado en un repositorio privado de GitHub. No está disponible para descarga pública. Este README describe la versión web de `agente_web.py` y el ejecutable creado con `crear_exe.bat`; no describe una aplicación de escritorio independiente.
 
 ## Antes de empezar
 
