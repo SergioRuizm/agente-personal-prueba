@@ -50,19 +50,24 @@ La compilación de prueba se hizo en Windows con Python 3.14 y PyInstaller 6.17.
 - Para revisar código, coloca los archivos en `codigo`. Si pides corregir un archivo, revisa los cambios y confirma antes de aplicarlos. Se guarda una copia de seguridad en `codigo\copias_seguridad`.
 - El contenido que el agente envía a Gemini puede incluir texto de documentos o código que le pidas leer.
 
-## Acceso desde otro dispositivo
+## Acceso desde un móvil
 
-Por defecto, el servidor solo escucha en este ordenador (`127.0.0.1`). Para permitir el acceso desde dispositivos de la misma red privada, inicia el programa desde PowerShell con:
+El `.exe` es para Windows y no se instala ni se ejecuta en Android o iPhone. Para usar la aplicación desde el móvil:
 
-```powershell
-py -3.14 agente_web.py --movil
-```
+1. Deja `AgentePersonal.exe` e `iniciar_movil.bat` juntos en el mismo ordenador Windows.
+2. Conecta el ordenador y el móvil a la misma red Wi-Fi privada.
+3. En el ordenador, haz doble clic en `iniciar_movil.bat`. Mantén abierta la ventana negra; mostrará la dirección de red y el PIN.
+4. En el navegador del móvil, abre esa dirección y escribe el PIN.
 
+Si el Firewall de Windows pregunta, permite el acceso solo en redes privadas; no marques redes públicas. El modo móvil expone el servicio en la red local y usa PIN. No expongas el programa directamente a Internet; para acceso remoto, utiliza una VPN privada.
 Configura o cambia la clave desde el navegador del propio ordenador, no desde el móvil. Si el Firewall de Windows pregunta, permite el acceso solo en redes privadas; no marques redes públicas. El modo móvil expone el servicio en la red local y usa PIN. No expongas el programa directamente a Internet; para acceso remoto, utiliza una VPN privada.
 
 ## Estado de las pruebas
 
 - Probado por el usuario: acceso web local, guardar una tarea, leer un documento de prueba, editar una imagen de prueba y conservar conversación y tarea tras reiniciar.
+- Probado por el usuario: el ejecutable abrió la aplicación y respondió a una tarea en otro ordenador Windows donde se confirmó que no había Python instalado.
+- Probado durante la preparación: sintaxis e importaciones con Python 3.14; compilación con PyInstaller 6.17; ayuda del ejecutable; guardar y reutilizar una clave ficticia.
+- Pendiente: probar todas las funciones del ejecutable en un Windows sin Python; otros navegadores, lectores de pantalla, macOS y Linux; y revisión completa de seguridad y publicación.
 - Probado por el usuario: una compilación anterior del ejecutable abrió la aplicación y respondió a una tarea en otro Windows sin Python; la compilación siguiente falló porque no incluyó el módulo dinámico `agente_personal`.
 - Probado durante la preparación: la compilación actual incluye el módulo dinámico y arranca con una configuración de prueba que contiene una clave ficticia; ayuda del ejecutable y compilación con PyInstaller 6.17.
 - Probado durante la preparación: sintaxis e importaciones con Python 3.14; compilación con PyInstaller 6.17; ayuda del ejecutable; y pruebas aisladas del formulario de clave, incluido rechazo de claves no válidas y persistencia de una clave ficticia.
