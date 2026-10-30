@@ -41,7 +41,7 @@ Deja abierta la ventana de PowerShell. Visita `http://localhost:8765`, introduce
 
 Con Python 3.14, PyInstaller y las dependencias instaladas, ejecuta `crear_exe.bat` desde el Explorador de archivos. El ejecutable se genera en `dist\AgentePersonal.exe`.
 
-La compilación de prueba se hizo en Windows con Python 3.14 y PyInstaller 6.17. El motor `agente_personal` se incluye explícitamente porque se carga dinámicamente. Una compilación anterior omitió ese módulo y falló; la compilación actual ya arranca con el módulo incluido. Aún falta repetir la prueba en otro Windows sin Python con esta compilación actualizada.
+La compilación de prueba se hizo en Windows con Python 3.14 y PyInstaller 6.17. El ejecutable abrió la aplicación y respondió a una tarea de prueba. Aún no se ha verificado en una máquina cuya ausencia de Python se haya confirmado ni se han probado todas las funciones del `.exe`.
 
 ## Documentos, fotos y código
 
@@ -64,10 +64,9 @@ Configura o cambia la clave desde el navegador del propio ordenador, no desde el
 ## Estado de las pruebas
 
 - Probado por el usuario: acceso web local, guardar una tarea, leer un documento de prueba, editar una imagen de prueba y conservar conversación y tarea tras reiniciar.
-- Probado por el usuario: una compilación anterior del ejecutable abrió la aplicación y respondió a una tarea en otro Windows sin Python; la compilación siguiente falló porque no incluyó el módulo dinámico `agente_personal`.
-- Probado durante la preparación: la compilación actual incluye el módulo dinámico y arranca con una configuración de prueba que contiene una clave ficticia; ayuda del ejecutable y compilación con PyInstaller 6.17.
+- Probado por el usuario: el ejecutable abrió la aplicación y respondió a una tarea en otro ordenador Windows donde se confirmó que no había Python instalado.
 - Probado durante la preparación: sintaxis e importaciones con Python 3.14; compilación con PyInstaller 6.17; ayuda del ejecutable; y pruebas aisladas del formulario de clave, incluido rechazo de claves no válidas y persistencia de una clave ficticia.
-- Pendiente: probar esta compilación actualizada en el otro Windows; probar la introducción de una clave real con la nueva interfaz; otros navegadores, lectores de pantalla, macOS y Linux; y revisión completa de seguridad.
+- Pendiente: probar la introducción de una clave real con la nueva interfaz; probar todas las funciones del ejecutable en otro Windows; otros navegadores, lectores de pantalla, macOS y Linux; y revisión completa de seguridad y publicación.
 
 ## Licencia y contacto
 
