@@ -420,10 +420,6 @@ class ClaveEnUso(Exception):
     pass
 
 
-class ErrorGuardarClave(Exception):
-    pass
-
-
 def restaurar_clave(google_anterior, gemini_anterior, motor_anterior, modulo_en_cache):
     global nucleo
     if google_anterior is None:
@@ -460,18 +456,12 @@ def configurar_clave(clave):
         motor = cargar_motor()
         motor.modelo.invoke("Responde únicamente con OK.")
 
-        try:
-            CONFIG.parent.mkdir(parents=True, exist_ok=True)
-            archivo_temporal.write_text(
-                json.dumps({"clave": clave}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            os.replace(archivo_temporal, CONFIG)
-        except OSError as error:
-            raise ErrorGuardarClave(
-                "Gemini aceptó la clave, pero no se pudo guardar en la configuración de este ordenador. "
-                "Revisa los permisos de la carpeta de usuario."
-            ) from error
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        archivo_temporal.write_text(
+            json.dumps({"clave": clave}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(archivo_temporal, CONFIG)
     except Exception:
         restaurar_clave(google_anterior, gemini_anterior, motor_anterior, modulo_en_cache)
         try:
@@ -493,8 +483,6 @@ def error_configurar_clave(error, clave):
         return "Gemini no pudo comprobar la clave porque se alcanzó un límite o cuota. Revisa tu cuota e inténtalo de nuevo."
     if "permission_denied" in normalizado or "403" in detalle:
         return "Google no autorizó la clave para este modelo. Revisa la clave y su acceso en Google AI Studio."
-    if isinstance(error, ErrorGuardarClave):
-        return str(error)
     return "No se pudo comprobar la clave. Revisa tu conexión e inténtalo de nuevo. Detalle: " + detalle[:240]
 
 
@@ -514,8 +502,6 @@ def guardar_clave():
         configurar_clave(clave)
     except ClaveEnUso as error:
         return jsonify(error=str(error)), 409
-    except ErrorGuardarClave as error:
-        return jsonify(error=str(error)), 500
     except Exception as error:
         return jsonify(error=error_configurar_clave(error, clave)), 502
     return jsonify(ok=True)
