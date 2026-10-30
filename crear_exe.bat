@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo Creando AgentePersonal.exe con Python 3.14...
-py -3.14 -m PyInstaller --noconfirm --clean --onefile --name AgentePersonal --console --collect-all langchain_google_genai --collect-all langgraph agente_web.py
+py -3.14 -m PyInstaller --noconfirm --clean --onefile --name AgentePersonal --console --hidden-import agente_personal --collect-all langchain_google_genai --collect-all langgraph agente_web.py
 if errorlevel 1 goto error
 
 echo.
