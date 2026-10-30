@@ -30,6 +30,7 @@ OPCIONES (variables de entorno, opcionales)
 
 import argparse
 import builtins
+import importlib
 import io
 import json
 import os
@@ -199,7 +200,7 @@ def traducir_error(mensaje: str) -> str:
     if "429" in mensaje or "quota" in m or "resource_exhausted" in m:
         texto = "Has llegado al límite gratuito de Gemini. Espera unos minutos y vuelve a intentarlo."
     elif "api key" in m or "api_key" in m or "permission_denied" in m or "401" in mensaje or "403" in mensaje:
-        texto = "Hay un problema con la clave de API. Revisa que sea correcta."
+        texto = "Google ha rechazado la clave de Gemini. Abre «Clave de Gemini» en el menú para cambiarla."
     elif "not_found" in m or "404" in mensaje:
         texto = "El modelo de Gemini no está disponible. Cambia su nombre en agente_personal_gemini.py."
     elif "recursion" in m:
@@ -400,6 +401,112 @@ def logout():
     return jsonify(ok=True)
 
 
+@app.get("/api/configuracion")
+@requiere_login
+def configuracion():
+    return jsonify(clave_configurada=bool(nucleo is not None and hay_clave()))
+
+
+def cargar_motor():
+    global nucleo
+    if nucleo is None:
+        nucleo = importlib.import_module("agente_personal")
+    else:
+        nucleo = importlib.reload(nucleo)
+    return nucleo
+
+
+class ClaveEnUso(Exception):
+    pass
+
+
+def restaurar_clave(google_anterior, gemini_anterior, motor_anterior, modulo_en_cache):
+    global nucleo
+    if google_anterior is None:
+        os.environ.pop("GOOGLE_API_KEY", None)
+    else:
+        os.environ["GOOGLE_API_KEY"] = google_anterior
+    if gemini_anterior is None:
+        os.environ.pop("GEMINI_API_KEY", None)
+    else:
+        os.environ["GEMINI_API_KEY"] = gemini_anterior
+    if motor_anterior is not None:
+        nucleo = importlib.reload(motor_anterior)
+    elif modulo_en_cache is None:
+        sys.modules.pop("agente_personal", None)
+        nucleo = None
+
+
+def configurar_clave(clave):
+    global nucleo
+    google_anterior = os.environ.get("GOOGLE_API_KEY")
+    gemini_anterior = os.environ.get("GEMINI_API_KEY")
+    motor_anterior = nucleo
+    modulo_en_cache = sys.modules.get("agente_personal")
+    archivo_temporal = CONFIG.with_name(CONFIG.name + ".tmp")
+
+    with LOCK:
+        if JOB["ocupado"]:
+            raise ClaveEnUso("Espera a que termine el trabajo actual para cambiar la clave.")
+        JOB.update(ocupado=True, estado="Comprobando la clave de Gemini...", confirmacion=None)
+
+    try:
+        os.environ["GOOGLE_API_KEY"] = clave
+        os.environ.pop("GEMINI_API_KEY", None)
+        motor = cargar_motor()
+        motor.modelo.invoke("Responde únicamente con OK.")
+
+        CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        archivo_temporal.write_text(
+            json.dumps({"clave": clave}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(archivo_temporal, CONFIG)
+    except Exception:
+        restaurar_clave(google_anterior, gemini_anterior, motor_anterior, modulo_en_cache)
+        try:
+            archivo_temporal.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    finally:
+        with LOCK:
+            JOB.update(ocupado=False, estado="", confirmacion=None)
+
+
+def error_configurar_clave(error, clave):
+    detalle = str(error).replace(clave, "[oculta]")
+    normalizado = detalle.lower()
+    if "api_key_invalid" in normalizado or "api key not valid" in normalizado:
+        return "Google no acepta esa clave. Revisa que la hayas copiado completa desde Google AI Studio."
+    if "429" in detalle or "quota" in normalizado or "resource_exhausted" in normalizado:
+        return "Gemini no pudo comprobar la clave porque se alcanzó un límite o cuota. Revisa tu cuota e inténtalo de nuevo."
+    if "permission_denied" in normalizado or "403" in detalle:
+        return "Google no autorizó la clave para este modelo. Revisa la clave y su acceso en Google AI Studio."
+    return "No se pudo comprobar la clave. Revisa tu conexión e inténtalo de nuevo. Detalle: " + detalle[:240]
+
+
+@app.post("/api/configuracion/clave")
+@requiere_login
+def guardar_clave():
+    if request.remote_addr not in {"127.0.0.1", "::1"}:
+        return jsonify(error="Por seguridad, configura la clave desde el navegador del ordenador donde se ejecuta el agente."), 403
+    datos = request.get_json(silent=True)
+    clave = datos.get("clave") if isinstance(datos, dict) else None
+    if not isinstance(clave, str):
+        return jsonify(error="Escribe una clave de Gemini válida."), 400
+    clave = clave.strip()
+    if not clave or len(clave) > 2048:
+        return jsonify(error="Escribe una clave de Gemini válida."), 400
+    try:
+        configurar_clave(clave)
+    except ClaveEnUso as error:
+        return jsonify(error=str(error)), 409
+    except Exception as error:
+        return jsonify(error=error_configurar_clave(error, clave)), 502
+    return jsonify(ok=True)
+
+
 # ----------------------------------------------------------------------------
 # API
 # ----------------------------------------------------------------------------
@@ -450,6 +557,8 @@ def borrar_chat(id_conv):
 @app.post("/api/enviar")
 @requiere_login
 def enviar():
+    if nucleo is None:
+        return jsonify(error="Primero configura tu clave de Gemini con el botón «Clave de Gemini»."), 503
     datos = request.get_json(silent=True) or {}
     texto = str(datos.get("texto") or "").strip()
     chat_id = datos.get("chat_id")
@@ -721,6 +830,9 @@ HTML = r"""<!doctype html>
       <button id="btnPanelLado" class="enlace" type="button" aria-controls="panel" title="Herramientas y contexto">
         <svg class="ic"><use href="#i-tool"/></svg><span class="etq">Herramientas y contexto</span>
       </button>
+      <button id="btnClave" class="enlace" type="button" title="Configurar o cambiar la clave de Gemini">
+        <svg class="ic"><use href="#i-spark"/></svg><span class="etq">Clave de Gemini</span>
+      </button>
       <div class="tema" role="group" aria-label="Apariencia">
         <button type="button" data-tema="auto" aria-pressed="true" aria-label="Apariencia automática (según el sistema)" title="Automática"><svg class="ic"><use href="#i-monitor"/></svg><span>Auto</span></button>
         <button type="button" data-tema="claro" aria-pressed="false" aria-label="Apariencia clara" title="Clara"><svg class="ic"><use href="#i-sun"/></svg><span>Claro</span></button>
@@ -835,6 +947,22 @@ HTML = r"""<!doctype html>
     <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN">
     <div id="loginError" class="dlg-error" role="alert"></div>
     <div class="dlg-pie"><button id="btnLogin" class="boton primario" type="submit">Entrar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgClave" aria-labelledby="dlgClaveTitulo">
+  <form id="formClave" class="dlg-cuerpo">
+    <span class="logo" aria-hidden="true"><svg class="ic"><use href="#i-spark"/></svg></span>
+    <h2 id="dlgClaveTitulo">Configura tu clave de Gemini</h2>
+    <p class="suave">Crea una clave personal gratuita en <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a> y pégala aquí. Solo se guarda en este ordenador.</p>
+    <label for="claveApi">Clave de API de Google</label>
+    <input id="claveApi" type="password" maxlength="2048" autocomplete="new-password" spellcheck="false" required>
+    <p class="suave">Se enviará una prueba breve a Gemini para comprobarla. No se guardará si Google la rechaza.</p>
+    <div id="claveError" class="dlg-error" role="alert"></div>
+    <div class="dlg-pie">
+      <button id="btnClaveCancelar" class="boton" type="button">Ahora no</button>
+      <button id="btnGuardarClave" class="boton primario" type="submit">Comprobar y guardar</button>
+    </div>
   </form>
 </dialog>
 </body>
@@ -1385,6 +1513,8 @@ const Api = {
   sesion: () => Api.llamar("/api/sesion", { tiempo: 8000 }),
   login: (pin) => Api.llamar("/api/login", { metodo: "POST", cuerpo: { pin } }),
   logout: () => Api.llamar("/api/logout", { metodo: "POST" }),
+  configuracion: () => Api.llamar("/api/configuracion"),
+  guardarClave: (clave) => Api.llamar("/api/configuracion/clave", { metodo: "POST", cuerpo: { clave }, tiempo: 120000 }),
   chats: () => Api.llamar("/api/chats"),
   chat: (id) => Api.llamar("/api/chats/" + encodeURIComponent(id)),
   renombrar: (id, titulo) => Api.llamar("/api/chats/" + encodeURIComponent(id), { metodo: "PATCH", cuerpo: { titulo } }),
@@ -2070,6 +2200,13 @@ function mostrarLogin() {
   E.pin.focus();
 }
 
+function mostrarDialogoClave() {
+  if (E.dlgClave.open) return;
+  E.claveError.textContent = "";
+  E.dlgClave.showModal();
+  E.claveApi.focus();
+}
+
 /* ==================== 9. Controlador ==================== */
 async function enviar(texto) {
   const mensaje = (texto === undefined ? E.entrada.value : texto).trim();
@@ -2281,6 +2418,27 @@ function enlazarEventos() {
 
   // Inicio de sesión
   document.addEventListener("sesion-caducada", mostrarLogin);
+  E.btnClave.addEventListener("click", mostrarDialogoClave);
+  E.btnClaveCancelar.addEventListener("click", () => E.dlgClave.close());
+  E.formClave.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const clave = E.claveApi.value.trim();
+    if (!clave) { E.claveError.textContent = "Pega tu clave de Gemini."; E.claveApi.focus(); return; }
+    E.btnGuardarClave.disabled = true;
+    E.claveError.textContent = "Comprobando la clave con Gemini…";
+    try {
+      await Api.guardarClave(clave);
+      E.claveApi.value = "";
+      E.dlgClave.close();
+      avisar("Clave comprobada y guardada en este ordenador.");
+      await iniciar();
+    } catch (e) {
+      E.claveError.textContent = e.message;
+      E.claveApi.focus();
+    } finally {
+      E.btnGuardarClave.disabled = false;
+    }
+  });
   E.dlgLogin.addEventListener("cancel", (ev) => ev.preventDefault());
   E.formLogin.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -2341,6 +2499,12 @@ async function iniciar() {
   try {
     const sesion = await Api.sesion();
     if (!sesion.autenticado) { mostrarLogin(); return; }
+    const configuracion = await Api.configuracion();
+    if (!configuracion.clave_configurada) {
+      ponerPill("offline", "Configura la clave de Gemini");
+      mostrarDialogoClave();
+      return;
+    }
     estado = await Api.estado();
   } catch (e) {
     if (e.estado !== 401) { ponerPill("offline", "Sin conexión"); avisar(e.message, true); }
@@ -2370,7 +2534,8 @@ function arrancar() {
     "btnMenu", "titulo", "pill", "pillTexto", "btnPanel", "conversacion", "bienvenida", "sugerencias", "mensajes", "btnFinal",
     "subida", "subidaTexto", "subidaBarra", "formulario", "btnAdjuntar", "entrada", "contador", "btnDetener", "btnEnviar", "archivo",
     "panel", "btnPanelRefrescar", "btnPanelCerrar", "cuerpoPanel", "soltar", "avisos",
-    "dlgConfirmar", "dlgConfirmarTexto", "dlgTexto", "dlgTextoCampo", "dlgBorrar", "dlgBorrarTexto", "dlgLogin", "formLogin", "pin", "loginError", "btnLogin"]) {
+    "dlgConfirmar", "dlgConfirmarTexto", "dlgTexto", "dlgTextoCampo", "dlgBorrar", "dlgBorrarTexto", "dlgLogin", "formLogin", "pin", "loginError", "btnLogin",
+    "dlgClave", "formClave", "claveApi", "claveError", "btnGuardarClave", "btnClaveCancelar", "btnClave"]) {
     E[id] = $(id);
   }
   aplicarTema(memoria.leer("tema", "auto"));
@@ -2400,31 +2565,25 @@ def hay_clave() -> bool:
     return bool(os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"))
 
 
-def asegurar_clave() -> None:
-    """Toma la clave de la variable de entorno, de la guardada por la app de escritorio o la pide."""
+def asegurar_clave() -> bool:
+    """Carga una clave guardada; la interfaz permite introducirla si todavía no existe."""
     if hay_clave():
-        return
+        return True
     try:
-        guardada = json.loads(CONFIG.read_text(encoding="utf-8")).get("clave")
-        if guardada:
-            os.environ["GOOGLE_API_KEY"] = guardada
-            return
-    except Exception:
-        pass
-    import getpass
-    clave = getpass.getpass("Pega tu clave de API de Google (no se verá al escribir): ").strip()
-    if not clave:
-        sys.exit("Sin clave de API no puedo funcionar.")
-    os.environ["GOOGLE_API_KEY"] = clave
-    try:
-        CONFIG.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG.write_text(
-            json.dumps({"clave": clave}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        configuracion_guardada = json.loads(CONFIG.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except (OSError, json.JSONDecodeError) as error:
+        sys.stderr.write(
+            f"No se pudo leer la configuración de Gemini ({error}). "
+            "Puedes introducir la clave desde la aplicación web.\n"
         )
-    except OSError as error:
-        print(f"No se pudo guardar la clave en la configuración: {error}")
-        print("La clave solo estará disponible hasta que cierres el programa.")
+        return False
+    guardada = configuracion_guardada.get("clave") if isinstance(configuracion_guardada, dict) else None
+    if not isinstance(guardada, str) or not guardada.strip():
+        return False
+    os.environ["GOOGLE_API_KEY"] = guardada.strip()
+    return True
 
 
 def ip_local() -> str:
@@ -2441,8 +2600,8 @@ def preparar() -> None:
     """Carga el motor y redirige las confirmaciones al navegador."""
     global nucleo, CAPTURA, PIN
     asegurar_clave()
-    import agente_personal as motor
-    nucleo = motor
+    if hay_clave():
+        nucleo = cargar_motor()
     CARPETA_DATOS.mkdir(exist_ok=True)
     CAPTURA = Capturador(sys.stdout)
     sys.stdout = CAPTURA
